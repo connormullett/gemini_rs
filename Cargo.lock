@@ -31,6 +31,7 @@ name = "gemini_server"
 version = "0.1.0"
 dependencies = [
  "rustls",
+ "rustls-pemfile",
 ]
 
 [[package]]
@@ -113,6 +114,15 @@ dependencies = [
  "ring",
  "sct",
  "webpki",
+]
+
+[[package]]
+name = "rustls-pemfile"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "09700171bbcc799d113f2c675314d6005c3dc035f3e7307cf3e7fd459ccbe246"
+dependencies = [
+ "base64",
 ]
 
 [[package]]
