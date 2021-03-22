@@ -1,3 +1,6 @@
+extern crate pem;
+extern crate rustls;
+
 use std::{
     fs::File,
     io::{self, BufReader, Read},
@@ -7,8 +10,8 @@ use std::{
 };
 
 use rustls::{
-    self, internal::pemfile::certs, AllowAnyAnonymousOrAuthenticatedClient, Certificate,
-    PrivateKey, RootCertStore, Session,
+    internal::pemfile::certs, AllowAnyAnonymousOrAuthenticatedClient, Certificate, PrivateKey,
+    RootCertStore, Session,
 };
 
 fn load_certs(path: &Path) -> io::Result<Vec<Certificate>> {
