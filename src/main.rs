@@ -1,6 +1,6 @@
 use std::{
     fs::File,
-    io::{self, BufReader},
+    io::{self, BufReader, Read},
     net::{SocketAddr, TcpListener},
     path::Path,
     sync::Arc,
@@ -16,20 +16,13 @@ fn load_certs(path: &Path) -> io::Result<Vec<Certificate>> {
         .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "invalid cert"))
 }
 
-fn load_keys(path: &Path) -> PrivateKey {
-    let keyfile = File::open(path).expect("cannot open private key file");
-    let mut reader = BufReader::new(keyfile);
+fn load_key(path: &Path) -> io::Result<PrivateKey> {
+    let mut reader = BufReader::new(File::open(path)?);
+    let mut data = String::new();
+    let _ = reader.read_to_string(&mut data)?;
+    let pem = pem::parse(data);
 
-    loop {
-        match rustls_pemfile::read_one(&mut reader).expect("cannot parse private key .pem file") {
-            Some(rustls_pemfile::Item::RSAKey(key)) => return rustls::PrivateKey(key),
-            Some(rustls_pemfile::Item::PKCS8Key(key)) => return rustls::PrivateKey(key),
-            None => break,
-            _ => {}
-        }
-    }
-
-    panic!("no keys found in {:?} (encrypted keys not supported)", path);
+    Ok(PrivateKey(pem.unwrap().contents))
 }
 
 fn make_config() -> Arc<rustls::ServerConfig> {
@@ -45,7 +38,7 @@ fn make_config() -> Arc<rustls::ServerConfig> {
 
     config.set_persistence(rustls::ServerSessionMemoryCache::new(256));
 
-    let private_key = load_keys(Path::new("./key.pem"));
+    let private_key = load_key(Path::new("./key.pem")).unwrap();
 
     config.set_single_cert(roots, private_key).unwrap();
 
