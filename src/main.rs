@@ -15,7 +15,9 @@ use std::{
     sync::Arc,
 };
 
-use rustls::{internal::pemfile::certs, Certificate, NoClientAuth, PrivateKey, RootCertStore};
+use rustls::{
+    internal::pemfile::certs, Certificate, NoClientAuth, PrivateKey, RootCertStore, Session,
+};
 
 fn load_certs(path: &Path) -> io::Result<Vec<Certificate>> {
     certs(&mut BufReader::new(File::open(path)?))
@@ -67,18 +69,19 @@ fn main() {
             Ok((mut socket, addr)) => {
                 log!(Level::Info, "Accepting new connection from {:?}", addr);
                 let mut tls_session = rustls::ServerSession::new(&config);
+
+                // let mut buf = Vec::new();
                 let mut stream = rustls::Stream::new(&mut tls_session, &mut socket);
-                let mut buf = Vec::new();
+                // let read_bytes = stream.read(&mut buf);
 
-                let read_bytes = stream.read(&mut buf);
+                // log!(Level::Info, "read_bytes {:?}", read_bytes);
 
-                log!(Level::Info, "read_bytes {:?}", read_bytes);
+                // let request = String::from_utf8_lossy(&buf);
+                // log!(Level::Info, "request {:?}", request);
 
-                let request = String::from_utf8_lossy(&buf);
-                log!(Level::Info, "request {:?}", request);
-
-                let _ = stream.write(b"20 text Hello");
+                let _ = stream.write_all(b"20 text/gemini\r\n#Hello\r\n");
             }
+
             _ => {}
         }
     }
