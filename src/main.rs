@@ -70,14 +70,14 @@ fn main() {
                 log!(Level::Info, "Accepting new connection from {:?}", addr);
                 let mut tls_session = rustls::ServerSession::new(&config);
 
-                // let mut buf = Vec::new();
+                let mut buf = Vec::new();
                 let mut stream = rustls::Stream::new(&mut tls_session, &mut socket);
-                // let read_bytes = stream.read(&mut buf);
+                let read_bytes = stream.read(&mut buf);
 
-                // log!(Level::Info, "read_bytes {:?}", read_bytes);
+                log!(Level::Info, "read_bytes {:?}", read_bytes);
 
-                // let request = String::from_utf8_lossy(&buf);
-                // log!(Level::Info, "request {:?}", request);
+                let request = String::from_utf8_lossy(&buf);
+                log!(Level::Info, "request {:?}", request);
 
                 let _ = stream.write_all(b"20 text/gemini\r\n#Hello\r\n");
             }
