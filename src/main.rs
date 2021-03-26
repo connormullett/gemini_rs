@@ -9,7 +9,7 @@ use log::Level;
 
 use std::{
     fs::File,
-    io::{self, BufReader, Read, Write},
+    io::{self, BufReader, Read},
     net::{SocketAddr, TcpListener},
     path::Path,
     sync::Arc,
@@ -58,7 +58,7 @@ fn main() {
     let port = 1965;
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
 
-    env_logger::Builder::new().parse_filters("info").init();
+    env_logger::Builder::new().parse_filters("trace").init();
 
     let config = make_config();
 
@@ -90,7 +90,7 @@ fn main() {
 
                         log!(Level::Info, "process result {:?}", process_result);
 
-                        let read_bytes = tls_session.read_to_end(&mut buf);
+                        let read_bytes = tls_session.read(&mut buf);
 
                         log!(Level::Info, "read_bytes {:?}", read_bytes);
 
