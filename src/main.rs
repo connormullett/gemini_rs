@@ -88,14 +88,14 @@ fn main() {
                         break;
                     }
 
-                    log!(Level::Info, "TLS read {:?}", process_result);
+                    log!(Level::Info, "process result {:?}", process_result);
 
                     let read_bytes = tls_session.read_to_end(&mut buf);
 
                     log!(Level::Info, "read_bytes {:?}", read_bytes);
 
-                    let response = String::from_utf8_lossy(&buf);
-                    println!("{:?}", response);
+                    let request = String::from_utf8_lossy(&buf);
+                    log!(Level::Info, "request {:?}", request);
                 }
 
                 if tls_session.wants_write() {
