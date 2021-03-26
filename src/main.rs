@@ -67,42 +67,38 @@ fn main() {
 
     loop {
         match listener.accept() {
-            Ok((mut socket, addr)) => loop {
+            Ok((mut socket, addr)) => {
                 log!(Level::Info, "Accepting new connection from {:?}", addr);
-
                 let mut tls_session = rustls::ServerSession::new(&config);
+                loop {
+                    if tls_session.wants_read() {
+                        let mut buf = Vec::new();
+                        let read_tls_result = tls_session.read_tls(&mut socket);
 
-                if tls_session.wants_read() {
-                    let mut buf = Vec::new();
-                    let read_tls_result = tls_session.read_tls(&mut socket);
+                        if let Ok(0) = read_tls_result {
+                            break;
+                        }
 
-                    if let Ok(0) = read_tls_result {
-                        break;
+                        log!(Level::Info, "TLS read {:?}", read_tls_result);
+
+                        let process_result = tls_session.process_new_packets();
+
+                        if let Err(error) = process_result {
+                            log!(Level::Warn, "{:?}", error);
+                            break;
+                        }
+
+                        log!(Level::Info, "process result {:?}", process_result);
+
+                        let read_bytes = tls_session.read_to_end(&mut buf);
+
+                        log!(Level::Info, "read_bytes {:?}", read_bytes);
+
+                        let request = String::from_utf8_lossy(&buf);
+                        log!(Level::Info, "request {:?}", request);
                     }
-
-                    log!(Level::Info, "TLS read {:?}", read_tls_result);
-
-                    let process_result = tls_session.process_new_packets();
-
-                    if let Err(_) = process_result {
-                        break;
-                    }
-
-                    log!(Level::Info, "process result {:?}", process_result);
-
-                    let read_bytes = tls_session.read_to_end(&mut buf);
-
-                    log!(Level::Info, "read_bytes {:?}", read_bytes);
-
-                    let request = String::from_utf8_lossy(&buf);
-                    log!(Level::Info, "request {:?}", request);
                 }
-
-                if tls_session.wants_write() {
-                    let _ = tls_session.write(b"20 text/gemini Hello gemini :)");
-                    let _ = tls_session.write_tls(&mut socket);
-                }
-            },
+            }
             _ => {}
         }
     }
