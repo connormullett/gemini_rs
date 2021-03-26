@@ -1,6 +1,11 @@
 extern crate pem;
 extern crate rustls;
 
+#[macro_use]
+extern crate log;
+
+use env_logger;
+
 use std::{
     fs::File,
     io::{self, BufReader, Read},
@@ -49,11 +54,15 @@ fn make_config() -> Arc<rustls::ServerConfig> {
 }
 
 fn main() {
-    let addr = SocketAddr::from(([0, 0, 0, 0], 1965));
+    let port = 1965;
+    let addr = SocketAddr::from(([0, 0, 0, 0], port));
+
+    env_logger::Builder::new().parse_filters("trace").init();
 
     let config = make_config();
 
     let listener = TcpListener::bind(addr).expect("cant listen on port");
+    log!(log::Level::Info, "listening on port {}", 1965);
 
     loop {
         match listener.accept() {
@@ -61,7 +70,12 @@ fn main() {
                 println!("Accepting new connection from {:?}", addr);
 
                 let mut tls_session = rustls::ServerSession::new(&config);
+
                 let _ = tls_session.read_tls(&mut socket);
+                let _ = tls_session.process_new_packets();
+                let mut buf = Vec::new();
+                let _ = tls_session.read_to_end(&mut buf).unwrap();
+                println!("{:?}", buf);
             }
             _ => {}
         }

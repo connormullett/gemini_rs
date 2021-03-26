@@ -6,6 +6,12 @@ edition = "2018"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[features]
+default = ["logging"]
+logging = ["log"]
+
 [dependencies]
 pem = "0.8.3"
 rustls = "0.19.0"
+log = { version = "0.4.4", optional = true }
+env_logger = "0.8.2"
