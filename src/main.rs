@@ -9,16 +9,13 @@ use log::Level;
 
 use std::{
     fs::File,
-    io::{self, BufReader, Read},
+    io::{self, BufReader, Read, Write},
     net::{SocketAddr, TcpListener},
     path::Path,
     sync::Arc,
 };
 
-use rustls::{
-    internal::pemfile::certs, AllowAnyAnonymousOrAuthenticatedClient, Certificate, PrivateKey,
-    RootCertStore, Session,
-};
+use rustls::{internal::pemfile::certs, Certificate, NoClientAuth, PrivateKey, RootCertStore};
 
 fn load_certs(path: &Path) -> io::Result<Vec<Certificate>> {
     certs(&mut BufReader::new(File::open(path)?))
@@ -41,7 +38,7 @@ fn make_config() -> Arc<rustls::ServerConfig> {
         client_auth_roots.add(&root).unwrap();
     }
 
-    let client_auth = AllowAnyAnonymousOrAuthenticatedClient::new(client_auth_roots);
+    let client_auth = NoClientAuth::new();
 
     let mut config = rustls::ServerConfig::new(client_auth);
 
@@ -70,34 +67,17 @@ fn main() {
             Ok((mut socket, addr)) => {
                 log!(Level::Info, "Accepting new connection from {:?}", addr);
                 let mut tls_session = rustls::ServerSession::new(&config);
-                loop {
-                    if tls_session.wants_read() {
-                        let mut buf = Vec::new();
-                        let read_tls_result = tls_session.read_tls(&mut socket);
+                let mut stream = rustls::Stream::new(&mut tls_session, &mut socket);
+                let mut buf = Vec::new();
 
-                        if let Ok(0) = read_tls_result {
-                            break;
-                        }
+                let read_bytes = stream.read(&mut buf);
 
-                        log!(Level::Info, "TLS read {:?}", read_tls_result);
+                log!(Level::Info, "read_bytes {:?}", read_bytes);
 
-                        let process_result = tls_session.process_new_packets();
+                let request = String::from_utf8_lossy(&buf);
+                log!(Level::Info, "request {:?}", request);
 
-                        if let Err(error) = process_result {
-                            log!(Level::Warn, "{:?}", error);
-                            break;
-                        }
-
-                        log!(Level::Info, "process result {:?}", process_result);
-
-                        let read_bytes = tls_session.read(&mut buf);
-
-                        log!(Level::Info, "read_bytes {:?}", read_bytes);
-
-                        let request = String::from_utf8_lossy(&buf);
-                        log!(Level::Info, "request {:?}", request);
-                    }
-                }
+                let _ = stream.write(b"20 text Hello");
             }
             _ => {}
         }
