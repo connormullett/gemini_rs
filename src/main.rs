@@ -58,7 +58,7 @@ fn main() {
     let port = 1965;
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
 
-    env_logger::Builder::new().parse_filters("trace").init();
+    env_logger::Builder::new().parse_filters("info").init();
 
     let config = make_config();
 
@@ -67,16 +67,33 @@ fn main() {
 
     loop {
         match listener.accept() {
-            Ok((mut socket, addr)) => {
-                println!("Accepting new connection from {:?}", addr);
+            Ok((mut socket, addr)) => loop {
+                log!(Level::Info, "Accepting new connection from {:?}", addr);
 
                 let mut tls_session = rustls::ServerSession::new(&config);
 
                 if tls_session.wants_read() {
                     let mut buf = Vec::new();
-                    let _ = tls_session.read_tls(&mut socket).unwrap();
-                    let _ = tls_session.process_new_packets().unwrap();
-                    let _ = tls_session.read_to_end(&mut buf).unwrap();
+                    let read_tls_result = tls_session.read_tls(&mut socket);
+
+                    if let Ok(0) = read_tls_result {
+                        break;
+                    }
+
+                    log!(Level::Info, "TLS read {:?}", read_tls_result);
+
+                    let process_result = tls_session.process_new_packets();
+
+                    if let Err(_) = process_result {
+                        break;
+                    }
+
+                    log!(Level::Info, "TLS read {:?}", process_result);
+
+                    let read_bytes = tls_session.read_to_end(&mut buf);
+
+                    log!(Level::Info, "read_bytes {:?}", read_bytes);
+
                     let response = String::from_utf8_lossy(&buf);
                     println!("{:?}", response);
                 }
@@ -85,7 +102,7 @@ fn main() {
                     let _ = tls_session.write(b"20 text/gemini Hello gemini :)");
                     let _ = tls_session.write_tls(&mut socket);
                 }
-            }
+            },
             _ => {}
         }
     }
