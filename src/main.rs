@@ -5,10 +5,11 @@ extern crate rustls;
 extern crate log;
 
 use env_logger;
+use log::Level;
 
 use std::{
     fs::File,
-    io::{self, BufReader, Read},
+    io::{self, BufReader, Read, Write},
     net::{SocketAddr, TcpListener},
     path::Path,
     sync::Arc,
@@ -55,14 +56,14 @@ fn make_config() -> Arc<rustls::ServerConfig> {
 
 fn main() {
     let port = 1965;
-    let addr = SocketAddr::from(([0, 0, 0, 0], port));
+    let addr = SocketAddr::from(([127, 0, 0, 1], port));
 
     env_logger::Builder::new().parse_filters("trace").init();
 
     let config = make_config();
 
     let listener = TcpListener::bind(addr).expect("cant listen on port");
-    log!(log::Level::Info, "listening on port {}", 1965);
+    log!(Level::Info, "listening on port {}", 1965);
 
     loop {
         match listener.accept() {
@@ -71,11 +72,19 @@ fn main() {
 
                 let mut tls_session = rustls::ServerSession::new(&config);
 
-                let _ = tls_session.read_tls(&mut socket);
-                let _ = tls_session.process_new_packets();
-                let mut buf = Vec::new();
-                let _ = tls_session.read_to_end(&mut buf).unwrap();
-                println!("{:?}", buf);
+                if tls_session.wants_read() {
+                    let mut buf = Vec::new();
+                    let _ = tls_session.read_tls(&mut socket).unwrap();
+                    let _ = tls_session.process_new_packets().unwrap();
+                    let _ = tls_session.read_to_end(&mut buf).unwrap();
+                    let response = String::from_utf8_lossy(&buf);
+                    println!("{:?}", response);
+                }
+
+                if tls_session.wants_write() {
+                    let _ = tls_session.write(b"20 text/gemini Hello gemini :)");
+                    let _ = tls_session.write_tls(&mut socket);
+                }
             }
             _ => {}
         }
