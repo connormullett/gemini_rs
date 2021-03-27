@@ -15,9 +15,7 @@ use std::{
     sync::Arc,
 };
 
-use rustls::{
-    internal::pemfile::certs, Certificate, NoClientAuth, PrivateKey, RootCertStore, Session,
-};
+use rustls::{internal::pemfile::certs, Certificate, NoClientAuth, PrivateKey, RootCertStore};
 
 fn load_certs(path: &Path) -> io::Result<Vec<Certificate>> {
     certs(&mut BufReader::new(File::open(path)?))
