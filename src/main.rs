@@ -9,29 +9,42 @@ use std::thread;
 extern crate log;
 use env_logger;
 
-fn handle_client(stream: &mut TlsStream<TcpStream>) {
-    info!("handling connection");
+enum RequestError {
+    UnexpectedClose,
+}
 
+fn read_request(stream: &mut TlsStream<TcpStream>) -> Result<Vec<u8>, RequestError> {
     let mut request = [0; 1026];
     let mut buf = &mut request[..];
     let mut len = 0;
 
-    loop {
+    let _ = loop {
         let bytes_read = if let Ok(read) = stream.read(buf) {
             read
         } else {
-            break;
+            break Err(RequestError::UnexpectedClose);
         };
         len += bytes_read;
         if request[..len].ends_with(b"\r\n") {
-            break;
+            break Ok(());
         } else if bytes_read == 0 {
-            break;
+            break Err(RequestError::UnexpectedClose);
         }
         buf = &mut request[len..];
-    }
+    }?;
 
-    info!("request {}", String::from_utf8(request.to_vec()).unwrap());
+    Ok(request[..len - 2].to_vec())
+}
+
+fn handle_client(stream: &mut TlsStream<TcpStream>) {
+    info!("handling connection");
+
+    let request = match read_request(stream) {
+        Ok(value) => value,
+        Err(_) => panic!(),
+    };
+
+    info!("request {}", String::from_utf8(request).unwrap());
 
     let out_data = b"20 text/gemini\r\n#Hello\r\n";
     stream.write(out_data).unwrap();
