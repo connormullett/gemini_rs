@@ -11,7 +11,6 @@ default = ["logging"]
 logging = ["log"]
 
 [dependencies]
-pem = "0.8.3"
-rustls = "0.19.0"
 log = { version = "0.4.4", optional = true }
 env_logger = "0.8.2"
+native-tls = "0.2.7"
