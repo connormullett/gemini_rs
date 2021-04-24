@@ -13,7 +13,10 @@ enum RequestError {
     UnexpectedClose,
 }
 
-fn read_request(stream: &mut TlsStream<TcpStream>) -> Result<Vec<u8>, RequestError> {
+fn read_request<T>(stream: &mut TlsStream<T>) -> Result<Vec<u8>, RequestError>
+where
+    T: Read + Write,
+{
     let mut request = [0; 1026];
     let mut buf = &mut request[..];
     let mut len = 0;
@@ -37,8 +40,6 @@ fn read_request(stream: &mut TlsStream<TcpStream>) -> Result<Vec<u8>, RequestErr
 }
 
 fn handle_client(stream: &mut TlsStream<TcpStream>) {
-    info!("handling connection");
-
     let request = match read_request(stream) {
         Ok(value) => value,
         Err(_) => panic!(),
@@ -48,6 +49,7 @@ fn handle_client(stream: &mut TlsStream<TcpStream>) {
 
     let out_data = b"20 text/gemini\r\n#Hello\r\n";
     stream.write(out_data).unwrap();
+    info!("response 20");
 }
 
 fn main() {
@@ -63,9 +65,12 @@ fn main() {
     let acceptor = TlsAcceptor::new(identity).unwrap();
     let acceptor = Arc::new(acceptor);
 
+    info!("listening on port 1965");
     for stream in listener.incoming() {
         match stream {
             Ok(stream) => {
+                info!("new connection");
+
                 let acceptor = acceptor.clone();
                 thread::spawn(move || {
                     let mut stream = acceptor.accept(stream).unwrap();
