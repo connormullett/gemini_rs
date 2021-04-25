@@ -60,14 +60,16 @@ fn read_file(path: &PathBuf) -> Result<String, RequestError> {
 }
 
 fn build_header(response: &ResponseStatus) -> String {
-    let header = format!("{} {}\r\n", response.status_code, response.mime_type);
-
+    let status_category = (response.status_code / 10) % 10;
     // if response.status is OK (starts with 2) and response.body is Some(_), add it to output
-    if (response.status_code / 10) % 10 == 2 && response.body.is_some() {
+    if status_category == 2 && response.body.is_some() {
+        let header = format!("{} {}\r\n", response.status_code, response.mime_type);
         let body = response.body.clone();
         format!("{}{}\r\n", header, body.unwrap())
+    } else if status_category == 4 {
+        format!("{} not found\r\n", response.status_code)
     } else {
-        header
+        format!("{} an unknown error occured\r\n", response.status_code)
     }
 }
 
@@ -121,19 +123,18 @@ fn handle_request(url: Url) -> ResponseStatus {
     }
 
     let mut output = String::new();
-    output.push_str(&format!("20 text/gemini\r\n"));
-
     let file_name = path.as_path().file_name().unwrap();
+    output.push_str(&format!("# {}\n", file_name.to_str().unwrap()));
 
-    output.push_str(file_name.to_str().unwrap());
     for entry in path.read_dir().unwrap() {
         let entry = entry.unwrap();
         let entry_path = entry.path();
+        let entry_path = entry_path.strip_prefix("content-root").unwrap();
         let entry_name = entry_path.to_str().unwrap();
-        let entry_string = format!("=> gemini://{}/{}", url.host().unwrap(), entry_name);
+        info!("entry {}", entry_name);
+        let entry_string = format!("=> /{} {}\n", entry_name, entry_name);
         output.push_str(&entry_string);
     }
-    output.push_str("\r\n");
 
     ResponseStatus::new(20, Some(output))
 }
