@@ -10,6 +10,7 @@ use std::{
 use std::{fs::File, path::PathBuf};
 use url::Url;
 
+use daemonize::Daemonize;
 use serde_derive::Deserialize;
 
 const CONFIG_FILE_NAME: &'static str = "config.toml";
@@ -223,6 +224,13 @@ fn main() {
                 .required(false)
                 .takes_value(true),
         )
+        .arg(
+            Arg::with_name("daemon")
+                .short("d")
+                .long("daemon")
+                .required(false)
+                .takes_value(false),
+        )
         .get_matches();
 
     let config_arg = matches.value_of("config").unwrap_or(CONFIG_FILE_NAME);
@@ -236,6 +244,27 @@ fn main() {
     let port = config.port.unwrap_or(1965);
 
     env_logger::Builder::new().parse_filters(&debug).init();
+
+    if matches.is_present("daemon") {
+        let stdout = File::create("/tmp/daemon.out").unwrap();
+        let stderr = File::create("/tmp/daemon.err").unwrap();
+
+        let daemonize = Daemonize::new()
+            .pid_file("/tmp/test.pid")
+            .working_directory("/tmp") // for default behaviour.
+            .user("nobody")
+            .group("daemon")
+            .umask(0o777)
+            .stdout(stdout)
+            .stderr(stderr)
+            .exit_action(|| println!("Executed before master process exits"))
+            .privileged_action(|| "Executed before drop privileges");
+
+        match daemonize.start() {
+            Ok(_) => println!("Success, daemonized"),
+            Err(e) => eprintln!("Error, {}", e),
+        }
+    }
 
     let mut file = File::open(config.certs.identity_pfx).unwrap();
     let mut identity = vec![];
