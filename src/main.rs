@@ -59,15 +59,53 @@ fn read_file(path: &PathBuf) -> Result<String, RequestError> {
     Ok(content)
 }
 
-fn build_response(url: Url) -> Result<String, RequestError> {
-    let path_str = PathBuf::from(url.path());
-    let mut path = PathBuf::from("content-root");
-    path.push(path_str);
+fn build_header(response: &ResponseStatus) -> String {
+    let header = format!("{} {}\r\n", response.status_code, response.mime_type);
+
+    // if response.status is OK (starts with 2) and response.body is Some(_), add it to output
+    if (response.status_code / 10) % 10 == 2 && response.body.is_some() {
+        let body = response.body.clone();
+        format!("{}{}\r\n", header, body.unwrap())
+    } else {
+        header
+    }
+}
+
+struct ResponseStatus {
+    status_code: u32,
+    mime_type: String,
+    body: Option<String>,
+}
+
+impl ResponseStatus {
+    pub fn new(status_code: u32, body: Option<String>) -> Self {
+        Self {
+            status_code,
+            mime_type: String::from("text/gemini"),
+            body,
+        }
+    }
+}
+
+fn handle_request(url: Url) -> ResponseStatus {
+    let mut path = PathBuf::from("content-root/");
+
+    if let Some(segments) = url.path_segments() {
+        for segment in segments {
+            path.push(segment);
+        }
+    };
+
+    if !path.exists() {
+        return ResponseStatus::new(40, None);
+    }
 
     if path.is_file() {
-        info!("is file");
-        let content = read_file(&path)?;
-        return Ok(content);
+        let (status, content) = match read_file(&path) {
+            Ok(value) => (20, Some(value)),
+            Err(_) => (40, None),
+        };
+        return ResponseStatus::new(status, content);
     }
 
     let mut index_path = path.clone();
@@ -75,9 +113,11 @@ fn build_response(url: Url) -> Result<String, RequestError> {
 
     if index_path.exists() {
         info!("index path {:?}", index_path);
-        let content = read_file(&index_path)?;
-        let output = format!("20 text/gemini\r\n{}\r\n", content);
-        return Ok(output);
+        let (status, content) = match read_file(&index_path) {
+            Ok(value) => (20, Some(value)),
+            Err(_) => (40, None),
+        };
+        return ResponseStatus::new(status, content);
     }
 
     let mut output = String::new();
@@ -95,7 +135,7 @@ fn build_response(url: Url) -> Result<String, RequestError> {
     }
     output.push_str("\r\n");
 
-    Ok(output)
+    ResponseStatus::new(20, Some(output))
 }
 
 fn handle_client(stream: &mut TlsStream<TcpStream>) {
@@ -113,10 +153,13 @@ fn handle_client(stream: &mut TlsStream<TcpStream>) {
         panic!("invalid scheme")
     }
 
-    let response = build_response(url).unwrap();
-    stream.write(response.as_bytes()).unwrap();
+    let response = handle_request(url);
 
-    info!("response 20");
+    let output = build_header(&response);
+
+    stream.write(output.as_bytes()).unwrap();
+
+    info!("response {}", response.status_code);
 }
 
 fn main() {
