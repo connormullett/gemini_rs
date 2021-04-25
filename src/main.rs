@@ -31,6 +31,7 @@ struct Config {
     port: Option<u16>,
     host: Option<String>,
     certs: Certificates,
+    debug: Option<String>,
 }
 
 impl Config {
@@ -40,6 +41,7 @@ impl Config {
             port: Some(1965),
             host: Some("0.0.0.0".to_string()),
             certs: Certificates::default(),
+            debug: Some("info".to_string()),
         }
     }
 }
@@ -223,16 +225,17 @@ fn main() {
         )
         .get_matches();
 
-    env_logger::Builder::new().parse_filters("trace").init();
-
     let config_arg = matches.value_of("config").unwrap_or(CONFIG_FILE_NAME);
     let config_path = PathBuf::from(config_arg);
     let config = read_config(config_path);
 
-    let content_root = match config.content_root {
-        Some(value) => value,
-        None => PathBuf::from("content-root"),
-    };
+    let content_root = config.content_root.unwrap_or(PathBuf::from("content-root"));
+
+    let debug = config.debug.unwrap_or("info".to_string());
+
+    let port = config.port.unwrap_or(1965);
+
+    env_logger::Builder::new().parse_filters(&debug).init();
 
     let mut file = File::open(config.certs.identity_pfx).unwrap();
     let mut identity = vec![];
@@ -244,7 +247,7 @@ fn main() {
     let acceptor = TlsAcceptor::new(identity).unwrap();
     let acceptor = Arc::new(acceptor);
 
-    info!("listening on port 1965");
+    info!("listening on port {}", port);
     for stream in listener.incoming() {
         match stream {
             Ok(stream) => {
