@@ -1,0 +1,8 @@
+
+content_root = "content-root"
+port = 1965
+host = "0.0.0.0"
+
+[certs]
+identity_pfx = "localhost.pfx"
+pfx_passphrase = "hunter2"

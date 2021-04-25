@@ -27,16 +27,18 @@ enum RequestError {
 
 #[derive(Deserialize)]
 struct Config {
-    content_root: PathBuf,
+    content_root: Option<PathBuf>,
     port: Option<u16>,
+    host: Option<String>,
     certs: Certificates,
 }
 
 impl Config {
     pub fn default() -> Self {
         Self {
-            content_root: PathBuf::from("content-root"),
+            content_root: Some(PathBuf::from("content-root")),
             port: Some(1965),
+            host: Some("0.0.0.0".to_string()),
             certs: Certificates::default(),
         }
     }
@@ -45,12 +47,14 @@ impl Config {
 #[derive(Deserialize)]
 struct Certificates {
     identity_pfx: PathBuf,
+    pfx_passphrase: String,
 }
 
 impl Certificates {
     pub fn default() -> Self {
         Self {
             identity_pfx: PathBuf::from("localhost.pfx"),
+            pfx_passphrase: String::new(),
         }
     }
 }
@@ -60,7 +64,7 @@ fn read_config(config_path: PathBuf) -> Config {
 
     match contents {
         Ok(value) => toml::from_str(&value).expect("error reading config"),
-        Err(_) => panic!("error reading config"),
+        Err(_) => Config::default(),
     }
 }
 
@@ -133,9 +137,7 @@ impl ResponseStatus {
     }
 }
 
-fn handle_request(url: Url) -> ResponseStatus {
-    let mut path = PathBuf::from("content-root/");
-
+fn handle_request(url: Url, mut path: PathBuf) -> ResponseStatus {
     if let Some(segments) = url.path_segments() {
         for segment in segments {
             path.push(segment);
@@ -183,7 +185,7 @@ fn handle_request(url: Url) -> ResponseStatus {
     ResponseStatus::new(20, Some(output))
 }
 
-fn handle_client(stream: &mut TlsStream<TcpStream>) {
+fn handle_client(stream: &mut TlsStream<TcpStream>, content_root: PathBuf) {
     let request = match read_request(stream) {
         Ok(value) => value,
         Err(_) => panic!(),
@@ -198,7 +200,7 @@ fn handle_client(stream: &mut TlsStream<TcpStream>) {
         panic!("invalid scheme")
     }
 
-    let response = handle_request(url);
+    let response = handle_request(url, content_root);
 
     let output = build_header(&response);
 
@@ -227,13 +229,18 @@ fn main() {
     let config_path = PathBuf::from(config_arg);
     let config = read_config(config_path);
 
-    let mut file = File::open("localhost.pfx").unwrap();
+    let content_root = match config.content_root {
+        Some(value) => value,
+        None => PathBuf::from("content-root"),
+    };
+
+    let mut file = File::open(config.certs.identity_pfx).unwrap();
     let mut identity = vec![];
-
     file.read_to_end(&mut identity).unwrap();
-    let identity = Identity::from_pkcs12(&identity, "hunter2").unwrap();
+    let identity = Identity::from_pkcs12(&identity, &config.certs.pfx_passphrase).unwrap();
 
-    let listener = TcpListener::bind("0.0.0.0:1965").unwrap();
+    let host = format!("{}:{}", config.host.unwrap(), config.port.unwrap());
+    let listener = TcpListener::bind(&host).unwrap();
     let acceptor = TlsAcceptor::new(identity).unwrap();
     let acceptor = Arc::new(acceptor);
 
@@ -243,10 +250,11 @@ fn main() {
             Ok(stream) => {
                 info!("new connection");
 
+                let thread_local_content_root = content_root.clone();
                 let acceptor = acceptor.clone();
                 thread::spawn(move || {
                     let mut stream = acceptor.accept(stream).unwrap();
-                    handle_client(&mut stream);
+                    handle_client(&mut stream, thread_local_content_root);
                 });
             }
             Err(e) => {
