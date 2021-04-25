@@ -3,3 +3,4 @@
 .env
 *.pfx
 .vscode
+content-root

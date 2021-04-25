@@ -1,16 +1,23 @@
 use native_tls::{Identity, TlsAcceptor, TlsStream};
-use std::fs::File;
-use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::Arc;
 use std::thread;
+use std::{
+    fs,
+    io::{Read, Write},
+};
+use std::{fs::File, path::PathBuf};
+use url::Url;
 
 #[macro_use]
 extern crate log;
 use env_logger;
 
+#[derive(Debug)]
 enum RequestError {
     UnexpectedClose,
+    UrlParseError,
+    IoReadError,
 }
 
 fn read_request<T>(stream: &mut TlsStream<T>) -> Result<Vec<u8>, RequestError>
@@ -39,16 +46,76 @@ where
     Ok(request[..len - 2].to_vec())
 }
 
+fn parse_url(request: String) -> Result<Url, RequestError> {
+    let url = Url::parse(&request).map_err(|_| RequestError::UrlParseError)?;
+    Ok(url)
+}
+
+fn read_file(path: &PathBuf) -> Result<String, RequestError> {
+    let content = fs::read_to_string(path).map_err(|error| {
+        error!("{}", error);
+        RequestError::IoReadError
+    })?;
+    Ok(content)
+}
+
+fn build_response(url: Url) -> Result<String, RequestError> {
+    let path_str = PathBuf::from(url.path());
+    let mut path = PathBuf::from("content-root");
+    path.push(path_str);
+
+    if path.is_file() {
+        info!("is file");
+        let content = read_file(&path)?;
+        return Ok(content);
+    }
+
+    let mut index_path = path.clone();
+    index_path.push("index.gmi");
+
+    if index_path.exists() {
+        info!("index path {:?}", index_path);
+        let content = read_file(&index_path)?;
+        let output = format!("20 text/gemini\r\n{}\r\n", content);
+        return Ok(output);
+    }
+
+    let mut output = String::new();
+    output.push_str(&format!("20 text/gemini\r\n"));
+
+    let file_name = path.as_path().file_name().unwrap();
+
+    output.push_str(file_name.to_str().unwrap());
+    for entry in path.read_dir().unwrap() {
+        let entry = entry.unwrap();
+        let entry_path = entry.path();
+        let entry_name = entry_path.to_str().unwrap();
+        let entry_string = format!("=> gemini://{}/{}", url.host().unwrap(), entry_name);
+        output.push_str(&entry_string);
+    }
+    output.push_str("\r\n");
+
+    Ok(output)
+}
+
 fn handle_client(stream: &mut TlsStream<TcpStream>) {
     let request = match read_request(stream) {
         Ok(value) => value,
         Err(_) => panic!(),
     };
 
-    info!("request {}", String::from_utf8(request).unwrap());
+    let request = String::from_utf8(request).unwrap();
+    info!("request {}", request);
 
-    let out_data = b"20 text/gemini\r\n#Hello\r\n";
-    stream.write(out_data).unwrap();
+    let url = parse_url(request).unwrap();
+
+    if url.scheme() != "gemini" {
+        panic!("invalid scheme")
+    }
+
+    let response = build_response(url).unwrap();
+    stream.write(response.as_bytes()).unwrap();
+
     info!("response 20");
 }
 
