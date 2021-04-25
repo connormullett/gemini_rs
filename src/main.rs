@@ -1,3 +1,4 @@
+use clap::{self, App, Arg};
 use native_tls::{Identity, TlsAcceptor, TlsStream};
 use std::net::{TcpListener, TcpStream};
 use std::sync::Arc;
@@ -9,6 +10,10 @@ use std::{
 use std::{fs::File, path::PathBuf};
 use url::Url;
 
+use serde_derive::Deserialize;
+
+const CONFIG_FILE_NAME: &'static str = "config.toml";
+
 #[macro_use]
 extern crate log;
 use env_logger;
@@ -18,6 +23,45 @@ enum RequestError {
     UnexpectedClose,
     UrlParseError,
     IoReadError,
+}
+
+#[derive(Deserialize)]
+struct Config {
+    content_root: PathBuf,
+    port: Option<u16>,
+    certs: Certificates,
+}
+
+impl Config {
+    pub fn default() -> Self {
+        Self {
+            content_root: PathBuf::from("content-root"),
+            port: Some(1965),
+            certs: Certificates::default(),
+        }
+    }
+}
+
+#[derive(Deserialize)]
+struct Certificates {
+    identity_pfx: PathBuf,
+}
+
+impl Certificates {
+    pub fn default() -> Self {
+        Self {
+            identity_pfx: PathBuf::from("localhost.pfx"),
+        }
+    }
+}
+
+fn read_config(config_path: PathBuf) -> Config {
+    let contents = read_file(&config_path);
+
+    match contents {
+        Ok(value) => toml::from_str(&value).expect("error reading config"),
+        Err(_) => panic!("error reading config"),
+    }
 }
 
 fn read_request<T>(stream: &mut TlsStream<T>) -> Result<Vec<u8>, RequestError>
@@ -164,7 +208,24 @@ fn handle_client(stream: &mut TlsStream<TcpStream>) {
 }
 
 fn main() {
+    let matches = App::new("GeminiRS")
+        .about("a basic gemini server writtern in rust")
+        .arg(
+            Arg::with_name("config")
+                .short("c")
+                .long("config")
+                .value_name("FILE")
+                .help("Set path to configuration")
+                .required(false)
+                .takes_value(true),
+        )
+        .get_matches();
+
     env_logger::Builder::new().parse_filters("trace").init();
+
+    let config_arg = matches.value_of("config").unwrap_or(CONFIG_FILE_NAME);
+    let config_path = PathBuf::from(config_arg);
+    let config = read_config(config_path);
 
     let mut file = File::open("localhost.pfx").unwrap();
     let mut identity = vec![];
