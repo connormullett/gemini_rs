@@ -207,7 +207,6 @@ fn handle_request(url: Url, mut path: PathBuf) -> ResponseStatus {
     index_path.push("index.gmi");
 
     if index_path.exists() {
-        info!("index path {:?}", index_path);
         let (status, content) = match read_file(index_path) {
             Ok(value) => (20, Some(value)),
             Err(_) => (40, None),
@@ -241,13 +240,16 @@ fn handle_client(stream: &mut TlsStream<TcpStream>, content_root: PathBuf) {
     let request = String::from_utf8(request).unwrap();
     info!("request {}", request);
 
-    let url = parse_url(request).unwrap();
-
-    if url.scheme() != "gemini" {
-        panic!("invalid scheme")
-    }
-
-    let response = handle_request(url, content_root);
+    let response = match parse_url(request) {
+        Ok(url) => {
+            if url.scheme() != "gemini" {
+                ResponseStatus::new(59, "Unsupported Scheme".to_string(), None)
+            } else {
+                handle_request(url, content_root)
+            }
+        }
+        Err(_) => ResponseStatus::new(59, "Bad Request".to_string(), None),
+    };
 
     let output = build_header(&response);
 
@@ -326,8 +328,6 @@ fn main() {
     for stream in listener.incoming() {
         match stream {
             Ok(stream) => {
-                info!("new connection");
-
                 let thread_local_content_root = content_root.clone();
                 let acceptor = acceptor.clone();
                 thread::spawn(move || {
