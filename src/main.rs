@@ -31,8 +31,8 @@ struct Config {
     content_root: Option<PathBuf>,
     port: Option<u16>,
     host: Option<String>,
-    certs: Certificates,
     debug: Option<String>,
+    certs: Certificates,
 }
 
 impl Config {
@@ -113,17 +113,20 @@ fn read_file(path: &PathBuf) -> Result<String, RequestError> {
 fn build_header(response: &ResponseStatus) -> String {
     let status_category = (response.status_code / 10) % 10;
     // if response.status is OK (starts with 2) and response.body is Some(_), add it to output
-    if status_category == 2 && response.body.is_some() {
+    if status_category == 1 {
+        format!("{} {}\r\n", response.status_code, response.mime_type)
+    } else if status_category == 2 && response.body.is_some() {
         let header = format!("{} {}\r\n", response.status_code, response.mime_type);
         let body = response.body.clone();
         format!("{}{}\r\n", header, body.unwrap())
-    } else if status_category == 4 {
+    } else if status_category == 5 {
         format!("{} not found\r\n", response.status_code)
     } else {
         format!("{} an unknown error occured\r\n", response.status_code)
     }
 }
 
+#[derive(Debug)]
 struct ResponseStatus {
     status_code: u32,
     mime_type: String,
@@ -131,10 +134,10 @@ struct ResponseStatus {
 }
 
 impl ResponseStatus {
-    pub fn new(status_code: u32, body: Option<String>) -> Self {
+    pub fn new(status_code: u32, meta: String, body: Option<String>) -> Self {
         Self {
             status_code,
-            mime_type: String::from("text/gemini"),
+            mime_type: meta,
             body,
         }
     }
@@ -147,16 +150,50 @@ fn handle_request(url: Url, mut path: PathBuf) -> ResponseStatus {
         }
     };
 
+    if let Some(params) = url.query() {
+        info!("params {}", params);
+    }
+
+    if url.path().contains("form.gmi") {
+        let content = fs::read_to_string(&mut path).expect("error reading file");
+
+        match url.query() {
+            Some(params) => {
+                let content = content.replace("{INPUT}", params);
+                let content: Vec<&str> = content
+                    .split('\n')
+                    .filter(|&line| !line.starts_with("?"))
+                    .collect();
+
+                let content = content.join("\n");
+
+                return ResponseStatus::new(20, "text/gemini".to_string(), Some(content.clone()));
+            }
+            None => {
+                let input = content.trim();
+                let input = input
+                    .split('\n')
+                    .find(|&line| line.starts_with('?'))
+                    .expect("expected first line starting with ?");
+                let input = input.replace("?", "");
+                info!("input {}", input);
+                let response = ResponseStatus::new(10, input.to_string(), None);
+                info!("response {:#?}", response);
+                return response;
+            }
+        };
+    }
+
     if !path.exists() {
-        return ResponseStatus::new(40, None);
+        return ResponseStatus::new(51, "not found".to_string(), None);
     }
 
     if path.is_file() {
         let (status, content) = match read_file(&path) {
             Ok(value) => (20, Some(value)),
-            Err(_) => (40, None),
+            Err(_) => (51, None),
         };
-        return ResponseStatus::new(status, content);
+        return ResponseStatus::new(status, "text/gemini".to_string(), content);
     }
 
     let mut index_path = path.clone();
@@ -168,7 +205,7 @@ fn handle_request(url: Url, mut path: PathBuf) -> ResponseStatus {
             Ok(value) => (20, Some(value)),
             Err(_) => (40, None),
         };
-        return ResponseStatus::new(status, content);
+        return ResponseStatus::new(status, "text/gemini".to_string(), content);
     }
 
     let mut output = String::new();
@@ -185,7 +222,7 @@ fn handle_request(url: Url, mut path: PathBuf) -> ResponseStatus {
         output.push_str(&entry_string);
     }
 
-    ResponseStatus::new(20, Some(output))
+    ResponseStatus::new(20, "text/gemini".to_string(), Some(output))
 }
 
 fn handle_client(stream: &mut TlsStream<TcpStream>, content_root: PathBuf) {
