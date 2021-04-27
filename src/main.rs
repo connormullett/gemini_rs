@@ -1,6 +1,5 @@
 use clap::{self, App, Arg};
 use native_tls::{Identity, TlsAcceptor, TlsStream};
-use std::net::{TcpListener, TcpStream};
 use std::sync::Arc;
 use std::thread;
 use std::{
@@ -8,12 +7,17 @@ use std::{
     io::{Read, Write},
 };
 use std::{fs::File, path::PathBuf};
+use std::{
+    io,
+    net::{TcpListener, TcpStream},
+};
 use url::Url;
 
 use daemonize::Daemonize;
 use serde_derive::Deserialize;
 
 const CONFIG_FILE_NAME: &str = "config.toml";
+const CONTENT_ROOT: &str = "content-root";
 
 #[macro_use]
 extern crate log;
@@ -30,7 +34,7 @@ struct Config {
     content_root: Option<PathBuf>,
     port: Option<u16>,
     host: Option<String>,
-    debug: Option<String>,
+    log_level: Option<String>,
     certs: Certificates,
 }
 
@@ -41,7 +45,7 @@ impl Config {
             port: Some(1965),
             host: Some("0.0.0.0".to_string()),
             certs: Certificates::default(),
-            debug: Some("info".to_string()),
+            log_level: Some("info".to_string()),
         }
     }
 }
@@ -68,6 +72,22 @@ fn read_config(config_path: PathBuf) -> Config {
         Ok(value) => toml::from_str(&value).expect("error reading config"),
         Err(_) => Config::default(),
     }
+}
+
+fn create_config_folder(config_path: &PathBuf) -> io::Result<()> {
+    fs::create_dir(config_path)?;
+
+    let config_file = PathBuf::from(format!(
+        "{}{}",
+        config_path.to_str().unwrap(),
+        CONFIG_FILE_NAME
+    ));
+
+    fs::copy("examples/config.toml.example", config_file)?;
+
+    fs::create_dir(format!("{}{}", config_path.to_str().unwrap(), CONTENT_ROOT))?;
+
+    Ok(())
 }
 
 fn read_request<T>(stream: &mut TlsStream<T>) -> Result<Vec<u8>, RequestError>
@@ -259,14 +279,15 @@ fn handle_client(stream: &mut TlsStream<TcpStream>, content_root: PathBuf) {
 }
 
 fn main() {
-    let matches = App::new("GeminiRS")
+    let matches = App::new("Grass")
         .about("a basic gemini server writtern in rust")
         .arg(
-            Arg::with_name("config")
-                .short("c")
-                .long("config")
-                .value_name("FILE")
-                .help("Set path to configuration")
+            Arg::with_name("path")
+                .short("p")
+                .long("path")
+                .value_name("PATH")
+                .help("Set path to grass configuration directory. Defaults to /var/grass/")
+                .default_value("/var/grass/")
                 .required(false)
                 .takes_value(true),
         )
@@ -274,26 +295,50 @@ fn main() {
             Arg::with_name("daemon")
                 .short("d")
                 .long("daemon")
+                .help("start as a daemon: CURRENTLY WIP")
                 .required(false)
                 .takes_value(false),
         )
         .get_matches();
 
-    let config_arg = matches.value_of("config").unwrap_or(CONFIG_FILE_NAME);
-    let config_path = PathBuf::from(config_arg);
+    let path_arg = matches.value_of("path").unwrap();
+    let config_path = PathBuf::from(path_arg);
+
+    if !config_path.exists() {
+        match create_config_folder(&config_path) {
+            Ok(_) => {
+                println!(
+                    "Default directory created at /var/grass.\n
+        Edit the example config.toml to suit your needs.\n
+        Don't forget to generate your certificates.\n
+        The content-root directory in the same folder contains\n
+        the source code for your server. A placeholder file has been placed to use"
+                );
+            }
+            Err(error) => {
+                println!(
+                    "Error creating configuration directory: {}",
+                    error.to_string()
+                );
+            }
+        }
+        std::process::exit(0);
+    }
+
     let config = read_config(config_path);
 
     let content_root = config
         .content_root
         .unwrap_or_else(|| PathBuf::from("content-root"));
 
-    let debug = config.debug.unwrap_or_else(|| "info".to_string());
+    let log_level = config.log_level.unwrap_or_else(|| "info".to_string());
 
     let port = config.port.unwrap_or(1965);
 
-    env_logger::Builder::new().parse_filters(&debug).init();
+    env_logger::Builder::new().parse_filters(&log_level).init();
 
     if matches.is_present("daemon") {
+        info!("Starting daemon");
         let stdout = File::create("/tmp/daemon.out").unwrap();
         let stderr = File::create("/tmp/daemon.err").unwrap();
 

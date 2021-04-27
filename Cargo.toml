@@ -1,5 +1,5 @@
 [package]
-name = "gemini_server"
+name = "grass"
 version = "0.1.0"
 authors = ["connor <connormullett@gmail.com>"]
 edition = "2018"

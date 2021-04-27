@@ -5,5 +5,5 @@ host = "0.0.0.0"
 log_level = "info"
 
 [certs]
-identity_pfx = "localhost.pfx"
+identity_pfx = "/var/grass/certs/localhost.pfx"
 pfx_passphrase = "hunter2"
