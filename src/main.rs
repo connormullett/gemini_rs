@@ -149,10 +149,6 @@ fn handle_request(url: Url, mut path: PathBuf) -> ResponseStatus {
         }
     };
 
-    if let Some(params) = url.query() {
-        info!("params {}", params);
-    }
-
     if url.path().contains("form.gmi") {
         let content = fs::read_to_string(&mut path);
 
@@ -175,14 +171,22 @@ fn handle_request(url: Url, mut path: PathBuf) -> ResponseStatus {
                 return ResponseStatus::new(20, "text/gemini".to_string(), Some(content));
             }
             None => {
-                let input = content.trim();
-                let input = input
+                let prompt = content.trim();
+                let mut status_code = 10;
+                let prompt = prompt
                     .split('\n')
                     .find(|&line| line.starts_with('?'))
                     .expect("expected first line starting with ?");
-                let input = input.replace("?", "");
-                let response = ResponseStatus::new(10, input, None);
-                return response;
+
+                if prompt.starts_with("??") {
+                    status_code = 11;
+                } else if prompt.starts_with('?') {
+                    status_code = 10;
+                }
+
+                let meta = prompt.replace("?", "");
+
+                return ResponseStatus::new(status_code, meta, None);
             }
         };
     }
