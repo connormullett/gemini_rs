@@ -154,7 +154,13 @@ fn handle_request(url: Url, mut path: PathBuf) -> ResponseStatus {
     }
 
     if url.path().contains("form.gmi") {
-        let content = fs::read_to_string(&mut path).expect("error reading file");
+        let content = fs::read_to_string(&mut path);
+
+        if let Err(error) = content {
+            return ResponseStatus::new(51, error.to_string(), None);
+        }
+
+        let content = content.unwrap();
 
         match url.query() {
             Some(params) => {
@@ -175,9 +181,7 @@ fn handle_request(url: Url, mut path: PathBuf) -> ResponseStatus {
                     .find(|&line| line.starts_with('?'))
                     .expect("expected first line starting with ?");
                 let input = input.replace("?", "");
-                info!("input {}", input);
                 let response = ResponseStatus::new(10, input, None);
-                info!("response {:#?}", response);
                 return response;
             }
         };
