@@ -13,11 +13,10 @@ use url::Url;
 use daemonize::Daemonize;
 use serde_derive::Deserialize;
 
-const CONFIG_FILE_NAME: &'static str = "config.toml";
+const CONFIG_FILE_NAME: &str = "config.toml";
 
 #[macro_use]
 extern crate log;
-use env_logger;
 
 #[derive(Debug)]
 enum RequestError {
@@ -63,7 +62,7 @@ impl Certificates {
 }
 
 fn read_config(config_path: PathBuf) -> Config {
-    let contents = read_file(&config_path);
+    let contents = read_file(config_path);
 
     match contents {
         Ok(value) => toml::from_str(&value).expect("error reading config"),
@@ -102,7 +101,7 @@ fn parse_url(request: String) -> Result<Url, RequestError> {
     Ok(url)
 }
 
-fn read_file(path: &PathBuf) -> Result<String, RequestError> {
+fn read_file(path: PathBuf) -> Result<String, RequestError> {
     let content = fs::read_to_string(path).map_err(|error| {
         error!("{}", error);
         RequestError::IoReadError
@@ -114,9 +113,9 @@ fn build_header(response: &ResponseStatus) -> String {
     let status_category = (response.status_code / 10) % 10;
     // if response.status is OK (starts with 2) and response.body is Some(_), add it to output
     if status_category == 1 {
-        format!("{} {}\r\n", response.status_code, response.mime_type)
+        format!("{} {}\r\n", response.status_code, response.meta)
     } else if status_category == 2 && response.body.is_some() {
-        let header = format!("{} {}\r\n", response.status_code, response.mime_type);
+        let header = format!("{} {}\r\n", response.status_code, response.meta);
         let body = response.body.clone();
         format!("{}{}\r\n", header, body.unwrap())
     } else if status_category == 5 {
@@ -129,7 +128,7 @@ fn build_header(response: &ResponseStatus) -> String {
 #[derive(Debug)]
 struct ResponseStatus {
     status_code: u32,
-    mime_type: String,
+    meta: String,
     body: Option<String>,
 }
 
@@ -137,7 +136,7 @@ impl ResponseStatus {
     pub fn new(status_code: u32, meta: String, body: Option<String>) -> Self {
         Self {
             status_code,
-            mime_type: meta,
+            meta,
             body,
         }
     }
@@ -162,12 +161,12 @@ fn handle_request(url: Url, mut path: PathBuf) -> ResponseStatus {
                 let content = content.replace("{INPUT}", params);
                 let content: Vec<&str> = content
                     .split('\n')
-                    .filter(|&line| !line.starts_with("?"))
+                    .filter(|&line| !line.starts_with('?'))
                     .collect();
 
                 let content = content.join("\n");
 
-                return ResponseStatus::new(20, "text/gemini".to_string(), Some(content.clone()));
+                return ResponseStatus::new(20, "text/gemini".to_string(), Some(content));
             }
             None => {
                 let input = content.trim();
@@ -177,7 +176,7 @@ fn handle_request(url: Url, mut path: PathBuf) -> ResponseStatus {
                     .expect("expected first line starting with ?");
                 let input = input.replace("?", "");
                 info!("input {}", input);
-                let response = ResponseStatus::new(10, input.to_string(), None);
+                let response = ResponseStatus::new(10, input, None);
                 info!("response {:#?}", response);
                 return response;
             }
@@ -189,7 +188,7 @@ fn handle_request(url: Url, mut path: PathBuf) -> ResponseStatus {
     }
 
     if path.is_file() {
-        let (status, content) = match read_file(&path) {
+        let (status, content) = match read_file(path) {
             Ok(value) => (20, Some(value)),
             Err(_) => (51, None),
         };
@@ -201,7 +200,7 @@ fn handle_request(url: Url, mut path: PathBuf) -> ResponseStatus {
 
     if index_path.exists() {
         info!("index path {:?}", index_path);
-        let (status, content) = match read_file(&index_path) {
+        let (status, content) = match read_file(index_path) {
             Ok(value) => (20, Some(value)),
             Err(_) => (40, None),
         };
@@ -244,7 +243,7 @@ fn handle_client(stream: &mut TlsStream<TcpStream>, content_root: PathBuf) {
 
     let output = build_header(&response);
 
-    stream.write(output.as_bytes()).unwrap();
+    stream.write_all(output.as_bytes()).unwrap();
 
     info!("response {}", response.status_code);
 }
@@ -274,9 +273,11 @@ fn main() {
     let config_path = PathBuf::from(config_arg);
     let config = read_config(config_path);
 
-    let content_root = config.content_root.unwrap_or(PathBuf::from("content-root"));
+    let content_root = config
+        .content_root
+        .unwrap_or_else(|| PathBuf::from("content-root"));
 
-    let debug = config.debug.unwrap_or("info".to_string());
+    let debug = config.debug.unwrap_or_else(|| "info".to_string());
 
     let port = config.port.unwrap_or(1965);
 
